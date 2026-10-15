@@ -1,204 +1,213 @@
 # CLAUDE.md
 
+## Working rules
+
+- **NEVER push, open/comment on PRs or issues, or post anything externally**
+  Local commits and branches are fine; the user publishes.
+- A question, "discuss" or "explain" is not a go-ahead: answer it, don't edit code.
+- Reproduce a failure/identified security bug before fixing it.
+  For before/after numbers, name the baseline (upstream,
+  the user's uncommitted draft, or your result).
+- Report review findings as a readable list (not JSON), separating real bugs from design
+  questions. Check the docs before calling documented behavior a bug.
+- Give the exact path or command for every deliverable; don't leave it only in a scratchpad.
+
 ## Build
+
+Dev build, from a clean checkout:
+
 ```sh
 ./autogen.sh
-./configure --enable-unittests --enable-debug-validation --enable-warnings --enable-dpdk --enable-ebpf --enable-nfqueue --enable-af-xdp --disable-sphinxbuild
+./configure --enable-unittests --enable-warnings --enable-dpdk --enable-ebpf --enable-nfqueue SPHINX_BUILD=no
 make -j$(nproc)
 ```
 
-A full build stores binary to ./src/suricata and takes several minutes. **Rebuild after every branch switch**.
-`suricata -V` prints the commit it was built from, good to catch incorrect version run.
-Suricata runs on variety of systems including Windows, Linux, FreeBSD, OpenBSD, Mac.
-Be aware that each output change REQUIRES to update schema.json
+- `--enable-debug-validation` (`DEBUG_VALIDATE_*` checks) and `--enable-unittests` are mutually
+  exclusive; configure fails on both. `SCLogDebug()` needs `--enable-debug`, then
+  `SC_LOG_LEVEL=Debug` (`SC_LOG_OP_FILTER=<regex>` narrows it).
+- A full build takes several minutes. **Rebuild (autogen to make) after every branch switch or rebase.**
+  `./src/suricata -V` shows the commit seen by the last `./configure`, not the last build.
+- Checkouts are often perf builds (`-O3`, no unit tests): check `--build-info` and
+  `grep -m1 '\$ ./configure' config.log` before relying on `-u`; ask before reconfiguring.
+- Suricata runs on Linux, FreeBSD, OpenBSD, macOS and Windows: guard OS-specific code, keep a fallback.
+- Every EVE output change MUST update `etc/schema.json` (sorted:
+  `./scripts/schema-sort.py --in-place etc/schema.json`) and the userguide.
 
 ## Tests
 
-**C unit tests**:
+Prefer unit tests where the area already has them, otherwise Suricata-Verify (SV); big features
+may warrant both. Firewall features: SV almost exclusively.
 
 ```sh
-SC_LOG_LEVEL=Debug ./src/suricata -u [-U flowbit]                # all or -U=REGEX, a PCRE filter on the test names
+./src/suricata -u -U '<pcre>'           # C unit tests; -U filters names
 ./src/suricata --list-unittests
+cd rust && cargo test [module::file::tests::name]
 ```
 
-**Rust unit tests** — from `rust/`:
+**Suricata-Verify** is a separate repo next to this one, named after this directory plus
+`-verify` (`suricata-dev` → `../suricata-dev-verify`). Run it from the Suricata root, as it
+uses `./src/suricata` and `./suricata.yaml` from the cwd.
 
 ```sh
-cd rust && cargo test
-cd rust && cargo test module::file_name::tests::test_name
+python3 ../<sv>/run.py -q <name> [<name>...]   # SUBSTRING match, not regex; no name = all ~3000
+python3 ../<sv>/run.py --exact <name>
+python3 ../<sv>/run.py --debug-failed <name>   # print stdout/stderr of failures
+sudo -E ../<sv>/live/run.py [--exact] <name>   # live capture, for what pcaps can't cover
 ```
 
-**Suricata-Verify** — a *separate repo* checked out next to this one.
-It uses `./src/suricata` and `./suricata.yaml` relative to the
-**current working directory**. The SV folder name is generally following the convention of suricata folder name plus "-verify" suffix. So if you are in Suricata folder name "suricata-dev" or "suricata" then Suricata-Verify tests can be expected in "../suricata-dev-verify/" or "../suricata-verify/" path.
+- If PASSED, FAILED and SKIPPED are all 0, nothing matched: that is not a pass.
+- Before blaming your change for SV failures, rule out version skew: SV should be on the matching
+  branch or current upstream, and the Suricata branch not older than SV.
 
-```sh
-python3 ../<SV foldername>/run.py                        # everything (~2500 tests, several minutes)
-python3 ../<SV foldername>/run.py 'firewall/'            # a PCRE regex on test name
-python3 ../<SV foldername>/run.py --debug-failed <name>  # dump stdout/stderr of failures
-```
+### Writing SV tests (`tests/<name>/test.yaml`)
 
-Prefer unit-tests, if they exist. Alternatively aim for Suricata-Verify. On big features, it may make sense to add full integration tests (SV) along unit-tests.
-SV tests generally supply their own suricata.yaml which completely replaces the `./suricata.yaml` but some may not.
-For Firewall features build SV almost exclusively, no unit tests.
+- Before adding a test, grep SV for existing coverage and state why yours is not a duplicate.
+  Ask before adding tests that were not requested: we face test explosion.
+- Assert the CORRECT behavior, so the test fails on the live bug and passes once fixed. Never
+  encode current (buggy) output or a diff between two runs.
+- Minimal reproducer: simplest pcap, stock config, IDS mode unless the feature needs more. Don't
+  tune settings (inspection windows, `decoder.*`) to make a case pass.
+- Self-contained and conventional: never write into or change another test's directory; copy
+  patterns from existing tests instead of inventing mechanisms; keep it portable (Linux,
+  FreeBSD, OpenBSD).
+- `requires:` takes `min-version`, `lt-version`, `features: [ASAN|DPDK|...]` (matched against
+  `--build-info`; unmet means a clean skip), `command` (external tools used), `env`, `files`,
+  `script`, `pcap: false` (pcap-less tests). Gate ASAN/leak tests with `features: [ASAN]`.
+- Prefer native `args:` over `command:`. Without `command:`, SV adds the binary, `-l`, `-c` (the
+  test's own `suricata.yaml`, else the default), `-r` (the single pcap) and the single `.rules`
+  file; one named `firewall.rules` is loaded via `--firewall-rules-exclusive` (implies firewall
+  mode), and none at all adds `--disable-detection`. A test name containing `ips` adds
+  `--simulate-ips`. Override config with a local `suricata.yaml`, not `--set`; it replaces the
+  default entirely, so re-declare what you need (e.g. `engine-analysis:`).
+- `command:` + `runner.sh` (`#!/bin/sh` / `"$@"` / `exit $?`) only when a crash exit code
+  (134/139) is itself the assertion. For `exit-code: 0`, native `args:` already fails on a crash.
+- `checks:` prefer `filter:` on eve.json; `shell:` + `expect:` only when EVE can't express it.
+- Behavior that differs between 8 and 9 gets a per-check gate: `requires: {lt-version: 9}` (or
+  `min-version: 9`) inside that `filter:`. Backports set the test's top-level `min-version` to
+  the 8.0.x release and split such checks.
+- Reuse pcaps: `find tests -name '*.pcap' -exec md5sum {} + | grep $(md5sum < new.pcap | cut -c1-32)`
+  finds an identical one; reference it relative to the test dir (`pcap: ../<test>/<file>.pcap`).
+- New pcaps: `file x.pcap` must say `pcap capture file` without `extensions` (OpenBSD can't read
+  those); no pcapng (`tshark -F pcap -r in -w out`). `./pcap-check.sh` checks all, in ~4 min.
+- Stream/reassembly tests need a real 3-way handshake: a midstream session whose protocol
+  detection fails stops reassembly.
+- Flaky live tests: remove the noise source or fix teardown order. Never loosen exact counts or add sleeps.
 
-**SV test anatomy** (`tests/<name>/test.yaml`): `requires:` (`min-version`, `features: [ASAN|DPDK|...]`
-— checked against `--build-info`'s `Features:` line, skips cleanly if unmet; also `env`, `files`,
-`script`), `args:`, `exit-code:`, `checks:` (`filter:` on eve.json fields, `shell:` grep + `expect:` (shell checks are much less preferred than eve checks!)).
+## Commits and pre-push checks (mirror CI)
 
-Prefer native `args:` over a raw `command:` block. With no `command:`, SV builds the invocation
-itself: binary, classification/reference configs, `-l`, `-c` (test dir's own `suricata.yaml` if
-present, else the default one), `-r` (the test dir's one `.pcap`), and rules (its one `.rules`
-file — a file named exactly `firewall.rules` auto-adds `--firewall-rules-exclusive`, which itself
-implies firewall mode, no separate `--firewall` needed). Ship a local `suricata.yaml` for config
-overrides (e.g. `firewall.policies.*`) instead of `--set` flags.
+- One logical change per commit, and each commit must build: CI builds every commit
+  (`git rebase -x 'make -j$(nproc)' <base>`). Keep a fix minimal, tests included,
+  split independent fixes, and fold follow-ups into the commit they belong to
+  (`git commit --fixup=<sha>`, then `git rebase --autosquash --autostash <base>`).
+- Stage explicit paths, never `git add -A` / `git add .`: checkouts hold untracked personal files
+- clang-format applies to changed lines only; never reformat surrounding code. Use the script:
+  it picks clang-format-17 like CI (the system one is newer and formats differently). It diffs
+  against `origin/main` (`origin/main-8.0.x` on 8.0.x), so name the base when the remote differs:
+  ```sh
+  SURICATA_BRANCH=github/main ./scripts/clang-format.sh check-branch    # github/main-8.0.x for backports
+  SURICATA_BRANCH=github/main ./scripts/clang-format.sh rewrite-branch  # fix inside each commit
+  ```
+- Rust: `cd rust && cargo fmt && cargo clippy --workspace --all-features --all-targets -- -D warnings`.
+- `./scripts/schema-sort.py --check etc/schema.json`
+- Docs, `main` only: `python3 scripts/check-doc-rules.py` (doc example rules must load) and
+  `python3 scripts/check_keyword_doc_links.py`.
+- The remaining CI checks (schema `additionalProperties`, `scripts/eve-parity.py`, ...) are in
+  `.github/workflows/{builds,docs}.yml`.
 
-`command:` (+ `runner.sh`: `#!/bin/sh` / `"$@"` / `exit $?`) is only needed when a *crash* exit code
-(134/139) is itself the assertion — a raw signal bypasses plain `exit-code` unless forced through a
-real fork. If the assertion is `exit-code: 0` (no crash expected), skip both: native `args:` already
-reports a real crash as Python's own negative signal returncode, which already fails to match 0.
+## Code style
 
-Before adding a new pcap, check for an existing one to reuse: `md5sum tests/*/input.pcap | sort | uniq -c -w32 | sort -rn` finds exact duplicates already in the tree for a good hygiene).
-Reference another test's pcap with `pcap: ../<test>/<file>.pcap` (`grep -rn '^pcap:' tests/*/test.yaml` for examples)
-Run `pcap(ng)-check.sh` to ensure CI success.
-
-ASAN/leak tests: gate with `requires: features: [ASAN]`.
-
-Write checks for the CORRECT end behavior, not current buggy behavior or a diff between two pcaps as the live bug should FAIL the test now and flip to PASS once fixed.
-
-If there are behavior changes between Suricata versions (e.g. 8 vs 9) then add::
-```
-  - filter:
-      requires:
-        lt-version: 9 # min-version
-```
-
-Suricata-verify also contains live tests. Tests are useful for verifying features that cannot be covered with standard SV tests.
-
-## Formatting and code style
-
-CI enforces clang-format on changed lines only (`.github/workflows/formatting.yml`), not on whole
-files — do not reformat surrounding code.
-
-```sh
-./scripts/clang-format.sh branch           # apply to the branch's commits
-./scripts/rustfmt.sh
-```
-
-Preferences:
-- code not too verbose -- code comments to minimum as we avoid duplicating the information
-- readability over compactness/high-degree of re-use
-- generally always use curly-braces (even in simple if-statements)
-
-## Review
-
-Review requires to watch out for the classic software engineering bugs (should be covered through /code-review skill)
-Additionally, make sure the documentation (code/userguide) fully represent the behavior in code. Follow "## Docs" on how it should look like.
-Ensure the change makes sense in all Suricata runmode (IDS/NSM/IPS/Firewall), respects all Suricata extensions (PCAP-log, File export, transactions, ip reputation, etc.) and generally does not change behavior unless asked for/clarified.
-Review also the testing process, we want to avoid unnecessary tests, we face test-explosion, so compact, easy-to-read, unique tests are required, covering as much as reasonably possible.
-
-## Development processes
-
-Suricata is developed in two main versions, currently 9 (on main branch) and 8.0.x (on main-8.0.x branch).
-The code is first added to the main branch and, if requested, backported to 8.0.x branch. The backports need to be ideally clean (no changes) or only introducing minimal changes, while adhering the Suricata 8 behavior. It is the most uttersome to never change detection/runtime/configuration behavior in Suricata 8.0.x, unless explicitly asked for.
-Backporting generally involves adjusting min version in relevant SV tests that were usually added with the original commits to main.
-
-Follow, on ultrathink, especially through multiple agents:
-
-First, understand the assignment, use superpowers to clearly define and clarify assignment.
-It is often good to assess the behavior through Suricata-Verify tests and lead by TDD.
-Consider potential edge cases and all runmodes/extensions/capture-modes/plugins/etc.
-Use the highest capable model available, e.g. Fable, Opus...
-
-As the next stage, follow the implementation plan, at the end of implementation, request a separate agent for review that should follow "## Review" chapter and give feedback.
-Run multiple rounds of implementers/reviews until the change fully conforms Suricata high standards on the code. Review needs to be done always with the fresh agent.
-
+- Concise code; comments only where they add what the code does not say.
+- Readability over compactness or maximal reuse.
+- Always use curly braces, even around a single-statement `if`.
+- Use Suricata-native helper functions/wrappers, instead of using native function calls when applicable, e.g., 
+  use the `threads.h` wrappers (`SCMutex*`, `SCCond*`, `SCSpin*`), not raw pthread calls.
+- Scaffold new modules with `scripts/setup-app-layer.py`, `scripts/setup-simple-detect.sh` or
+  `scripts/setup-decoder.sh` instead of copying an existing one.
 
 ## Docs
 
-```sh
-python3 -m sphinx -b html doc/userguide /tmp/docbuild
-```
+Docs ship in the same commit as the code; re-check them at the end of every change.
+Build like CI: `cd doc/userguide && python3 -m sphinx -W -q -b html . <scratchpad>/docbuild`.
 
-Keyword docs are cross-checked against the source by `scripts/check-doc-rules.py` and
-`scripts/check_keyword_doc_links.py`.
-Documentation should never be omitted, at the end of each change (e.g. commit) review documentation as it may need an update. Documentation ships within the commit of the code change.
+- Write for a security/network practitioner (rule writer or person deploying Suricata on live network) using Suricata: what it does, how to configure it, what it outputs.
+  Leave out implementation details, design rationale, history ("previously", "now") and progress notes unless they affect a user's decision.
+- Concise and non-repetitive, one source of truth; pull code/config in verbatim with
+  `literalinclude` where it helps.
+- When relevant, e.g., behavior change, add a note to the upgrade guide
+## Review
 
-The userguide docs style needs to reflect user interaction with Suricata as a security/network practicioner.
-The docs, unless beneficial for their decision, are not interested in the implementation decisions, progress report, comparison to the state before the change, decision arguments and inner bits.
+Besides classic bugs (`/code-review`), check that:
 
-You also need to verify that the documentation is not overly descriptive, repetitive (aiming at the single source of truth).
-Where relevant you can verbatim link parts of the codebase/docs directly to the RST docs using literalinclude directive.
+- code comments and the userguide match the actual behavior (see Docs);
+- the change is right in every mode (IDS, IPS, NSM/TAP, firewall), runmode (workers, autofp) and
+  capture method, respects the extensions (pcap-log, file extraction, transactions, IP
+  reputation, ...), and changes no behavior that was not asked for;
+- tests are compact, readable and unique, covering the most behavior with the fewest tests.
 
-## Tools
+## Development process
 
-Additional tools that can be helpful:
-- gh
-- scdev -- custom Suricata developer helper tool for interacting with Redmine tickets and remote repos
+- Two maintained lines: 9 on `main`, 8.0.x on `main-8.0.x`. Changes land on `main` first and are
+  backported only on request.
+- Backports are `git cherry-pick -x` of the `main` commits, ideally clean, otherwise minimally
+  adapted (e.g. inline `main`-only helpers). **NEVER change detection, runtime or configuration
+  behavior on 8.0.x unless explicitly asked.** Verify the references with
+  `scdev check cp --base github/main-8.0.x --main github/main`.
+- Redmine tickets are separately created so the backport commits should have ticket numbers updated.
+- Provide full explanation and options if the backport is not clean.
+
+When the prompt says **ultrathink**, run the full multi-agent workflow, with every subagent
+(implementers and reviewers) on the most capable model available (Fable or Opus):
+
+1. Clarify the assignment (superpowers:brainstorming) until it is unambiguous, then write the
+   plan (superpowers:writing-plans).
+2. Lead with tests (TDD, usually SV); here they count as requested, but must still be unique.
+   Consider edge cases across modes, runmodes, capture methods, extensions and plugins.
+3. Implement the plan.
+4. Review with a **fresh** agent following "Review"; repeat implement → fresh review until clean.
+
+## Tools and environment
+
+- `gh`; `scdev` (authenticated OISF helper; use it read-only, as `pr create`/`next-rev` and
+  `issue create` publish): `scdev issue <id> [--json]` reads a Redmine ticket with comments
+  (anonymous Redmine API returns 401). Use `--json` for relations: the text output prints the
+  wrong side of incoming ones.
+- OISF remote names vary per checkout (often `github`, not `origin`): check `git remote -v`.
+- HOME is an sshfs mount shared by several hosts; checkouts live on local disk. Python packages
+  (e.g. scapy) are in user site-packages, which `python3 -I` and `sudo` (HOME=/root) hide.
+- `sudo` is passwordless on the dev hosts (live tests, DPDK hugepages); its outputs are root-owned.
+- You can use sudo as necessary, install packages, or make changes, albeit try sudoless paths first. Installing a package that helps is better than writing same funcitonality from scratch.
 
 ## Architecture
 
-### Packet pipeline
+- Runmodes: **workers** (each thread runs capture → decode → stream → detect → output) and
+  **autofp** (capture/decode threads hand packets to flow-pinned workers). Stages are thread
+  modules chained as slots (`tm-threads.c`); management threads (flow manager/recycler, bypass
+  manager, stats) run alongside. Modes: IDS, IPS, NSM/TAP (inline, takes no action), firewall.
+- Detection: `detect-engine-{build,loader,mpm,prefilter,content-inspection,inspect-buffer}.c`;
+  `detect-engine-alert.c` applies verdicts/actions incl. firewall (`HandleFirewallRule`);
+  `detect-engine-analyzer.c` writes `--engine-analysis` (`rules.json`, `firewall.json`);
+  `detect-parse.c` parses rules and firewall policies; `detect-<keyword>.c` one per keyword.
+- YAML: a key defined again later (in the same file or via `include:`) replaces the earlier
+  section wholesale, with no deep merge; a dotted key (`a.b.c: v`) overrides only that leaf.
 
-Explore docs as necessary but two main thread architectures are autofp and workers.
-In Workers, each thread runs complete pipeline from capture through detection to logging.
-In autofp, it is divided between multiple groups.
+### Rust ↔ C
 
-Capture modules often use source-*, runmode-*, and util-* files, detect detect-* files, logging use output-* files.
-Modules are chained in thread slots, chained like: capture, decode, detect, output.
-On the side, there are management threads like flow managers (FM), flow recyclers (FR), bypass manager, etc.
+`rust/src/` holds most newer app-layer parsers and `jsonbuilder.rs`.
 
-The engine operates as IDS, IPS, NSM/TAP (observing inline, no actions taken on the traffic), Firewall.
-
-Split of detect files:
-
-- `detect-engine-build.c` / `detect-engine-loader.c` — rule loading, sig-group construction
-- `detect-engine-mpm.c`, `detect-engine-prefilter.c` — multi-pattern prefilter stage
-- `detect-engine-content-inspection.c`, `detect-engine-inspect-buffer.c` — per-rule inspection
-- `detect-engine-alert.c` — verdict/action application (`HandleFirewallRule` lives here)
-- `detect-engine-analyzer.c` — `--engine-analysis` output (`rules.json`, `firewall.json`)
-- `detect-parse.c` — rule *and* firewall-policy parsing (see below)
-- `detect-<keyword>.c` — one file per rule keyword
-
-  ### Rust / C Bindings
-
-`rust/src/` holds most newer app-layer parsers (`dns`, `http2`, `ldap`, `krb`, `enip`, ...)
-plus `jsonbuilder.rs`. C and Rust interop is generated in two directions:
-
-- Rust -> C headers: `cbindgen` generates `rust/gen/rust-bindings.h`,
-`rust/gen/rust-ffi.h`, and `rust/gen/htp/htp_rs.h`.
-The relevant recipes are in `rust/Makefile.am` under `gen/*` and `dist/*`.
-Local `rust/gen/` is ignored and normally produced/checked by the build.
-If a Rust `extern "C"` API/signature changed and C does not see it, rebuild Rust/C:
-`make -C rust` or `make`.
-
-- C -> Rust bindings: `bindgen` generates tracked file `rust/sys/src/sys.rs`
-from `src/bindgen.h`. If C structs/functions/macros exposed to Rust changed,
-run:
-`make -C rust update-bindings`
-
-Prereqs: `cbindgen` for Rust -> C, and `bindgen` plus `rustfmt` for C -> Rust.
-Install missing tools with:
-`cargo install --force cbindgen`
-`cargo install --force bindgen-cli`
-
-After installing `bindgen`, rerun `./configure ...` so `HAVE_BINDGEN` is enabled;
-otherwise `make -C rust update-bindings` will stay disabled in `rust/Makefile`.
-
-Useful check:
-`make -C rust check-bindgen-bindings`
-
-### Codegen helpers
-
-`scripts/setup-app-layer.py`, `scripts/setup-simple-detect.sh` and `scripts/setup-decoder.sh`
-scaffold a new app-layer parser, detect keyword or decoder with all the registration boilerplate
-wired up. Prefer them over hand-copying an existing module.
+- Rust → C: the cbindgen headers in `rust/gen/` are untracked build output. If C doesn't see a
+  changed `extern "C"` signature, run `make`.
+- C → Rust: bindgen generates the **tracked** `rust/sys/src/sys.rs` from `src/bindgen.h`; after
+  changing anything exposed there run `make -C rust update-bindings` (check:
+  `make -C rust check-bindgen-bindings`). Needs `cargo install --force cbindgen bindgen-cli` and
+  `rustfmt`; re-run `./configure` after installing bindgen, else `HAVE_BINDGEN` stays off.
 
 ## Contributing
 
-Follow ./git-templates/commit-template.txt when committing
-PR branches are named `<type>/<ticket>-<slug>-vN` (e.g. `bug/8954-action-scope-verify-v2`), with the
-version suffix bumped on each resubmission. See
-https://docs.suricata.io/en/latest/devguide/contributing/contribution-process.html
-
-Do not add any references or attributions to any AI companies or agents in the commit messages.
+- Commits follow `git-templates/commit-template.txt`: `<module>: <summary>` title, a body that
+  explains why, `Ticket: <redmine id>`. Never mention AI companies or agents in commit messages:
+  no `Co-Authored-By` or "Generated with" lines.
+- Branches: `<type>/<ticket>-<slug>-vN` (e.g. `bug/8954-action-scope-verify-v2`), backports
+  `backport-8.0.x/<type>/<ticket>-<slug>-vN`; bump `vN` on each resubmission. See
+  https://docs.suricata.io/en/latest/devguide/contributing/contribution-process.html
+- When drafting PR text, link the SV PR via `SV_BRANCH=`. Keep ticket titles neutral: describe
+  the issue, don't dramatize its impact.

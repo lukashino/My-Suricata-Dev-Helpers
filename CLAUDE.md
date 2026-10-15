@@ -30,7 +30,7 @@ cd rust && cargo test module::file_name::tests::test_name
 
 **Suricata-Verify** — a *separate repo* checked out next to this one.
 It uses `./src/suricata` and `./suricata.yaml` relative to the
-**current working directory**. The SV fodler name is generally following the convention of suricata folder name plus "-verify" suffix. So if you are in Suricata folder name "suricata-dev" or "suricata" then Suricata-Verify tests can be expected in "../suricata-dev-verify/" or "../suricata-verify/" path.
+**current working directory**. The SV folder name is generally following the convention of suricata folder name plus "-verify" suffix. So if you are in Suricata folder name "suricata-dev" or "suricata" then Suricata-Verify tests can be expected in "../suricata-dev-verify/" or "../suricata-verify/" path.
 
 ```sh
 python3 ../<SV foldername>/run.py                        # everything (~2500 tests, several minutes)
@@ -66,6 +66,15 @@ ASAN/leak tests: gate with `requires: features: [ASAN]`.
 
 Write checks for the CORRECT end behavior, not current buggy behavior or a diff between two pcaps as the live bug should FAIL the test now and flip to PASS once fixed.
 
+If there are behavior changes between Suricata versions (e.g. 8 vs 9) then add::
+```
+  - filter:
+      requires:
+        lt-version: 9 # min-version
+```
+
+Suricata-verify also contains live tests. Tests are useful for verifying features that cannot be covered with standard SV tests.
+
 ## Formatting and code style
 
 CI enforces clang-format on changed lines only (`.github/workflows/formatting.yml`), not on whole
@@ -80,6 +89,30 @@ Preferences:
 - code not too verbose -- code comments to minimum as we avoid duplicating the information
 - readability over compactness/high-degree of re-use
 - generally always use curly-braces (even in simple if-statements)
+
+## Review
+
+Review requires to watch out for the classic software engineering bugs (should be covered through /code-review skill)
+Additionally, make sure the documentation (code/userguide) fully represent the behavior in code. Follow "## Docs" on how it should look like.
+Ensure the change makes sense in all Suricata runmode (IDS/NSM/IPS/Firewall), respects all Suricata extensions (PCAP-log, File export, transactions, ip reputation, etc.) and generally does not change behavior unless asked for/clarified.
+Review also the testing process, we want to avoid unnecessary tests, we face test-explosion, so compact, easy-to-read, unique tests are required, covering as much as reasonably possible.
+
+## Development processes
+
+Suricata is developed in two main versions, currently 9 (on main branch) and 8.0.x (on main-8.0.x branch).
+The code is first added to the main branch and, if requested, backported to 8.0.x branch. The backports need to be ideally clean (no changes) or only introducing minimal changes, while adhering the Suricata 8 behavior. It is the most uttersome to never change detection/runtime/configuration behavior in Suricata 8.0.x, unless explicitly asked for.
+Backporting generally involves adjusting min version in relevant SV tests that were usually added with the original commits to main.
+
+Follow, on ultrathink, especially through multiple agents:
+
+First, understand the assignment, use superpowers to clearly define and clarify assignment.
+It is often good to assess the behavior through Suricata-Verify tests and lead by TDD.
+Consider potential edge cases and all runmodes/extensions/capture-modes/plugins/etc.
+Use the highest capable model available, e.g. Fable, Opus...
+
+As the next stage, follow the implementation plan, at the end of implementation, request a separate agent for review that should follow "## Review" chapter and give feedback.
+Run multiple rounds of implementers/reviews until the change fully conforms Suricata high standards on the code. Review needs to be done always with the fresh agent.
+
 
 ## Docs
 
@@ -96,6 +129,12 @@ The docs, unless beneficial for their decision, are not interested in the implem
 
 You also need to verify that the documentation is not overly descriptive, repetitive (aiming at the single source of truth).
 Where relevant you can verbatim link parts of the codebase/docs directly to the RST docs using literalinclude directive.
+
+## Tools
+
+Additional tools that can be helpful:
+- gh
+- scdev -- custom Suricata developer helper tool for interacting with Redmine tickets and remote repos
 
 ## Architecture
 

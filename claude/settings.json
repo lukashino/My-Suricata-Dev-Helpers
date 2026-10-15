@@ -1,0 +1,22 @@
+{
+  "permissions": {
+    "deny": [
+      "mcp__plugin_greptile_greptile__trigger_code_review",
+      "mcp__plugin_greptile_greptile__create_custom_context"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/block-external.py",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

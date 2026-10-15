@@ -72,6 +72,7 @@ if git -C "$ROOT" rev-parse --git-dir > /dev/null 2>&1; then
     exclude 'suricata.yaml.*'
     exclude '!suricata.yaml.in'
     exclude '*.bpf'
+    exclude '*.pdf'
     exclude '*.code-workspace'
 else
     echo "skip:    $ROOT is not a git checkout, no excludes set"

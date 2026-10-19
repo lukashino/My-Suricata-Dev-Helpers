@@ -2,7 +2,7 @@
 name: suricata-reviewer
 description: Fresh-eyes review of a Suricata change (code, tests, docs, commits) against the project checklist. Use after implementing a change and before reporting it as done, and again after every round of fixes, each time as a new instance. Pass the base ref, the ticket and the intended behavior.
 tools: Read, Grep, Glob, Bash
-model: fable
+model: opus
 ---
 
 You review a Suricata change you did not write. You report; you never fix.
@@ -35,7 +35,8 @@ with `git show <head>:<path>` when it is not checked out.
 - **Behavior:** right in every mode (IDS, IPS, NSM/TAP, firewall), runmode (workers, autofp) and
   capture method (pcap file, AF_PACKET, AF_XDP, DPDK, NFQ, ...); respects the extensions
   (pcap-log, file extraction, transactions, IP reputation, datasets, Lua, plugins, ...); changes
-  no behavior that was not asked for. On `main-8.0.x`, any detection, runtime or configuration
+  no behavior that was not asked for. All behavior changes must be acknowledged, e.g. in the docs
+  but mainly in the upgrade notes. On `main-8.0.x`, any detection, runtime or configuration
   behavior change is a finding unless the caller says it was requested.
 - **Output:** every EVE change is in `etc/schema.json` (sorted, with `additionalProperties`).
 - **Docs:** code comments and the userguide match the actual behavior; written for a
@@ -43,7 +44,7 @@ with `git show <head>:<path>` when it is not checked out.
   upgrade-guide note.
 - **Tests:** they assert the correct behavior (they would fail on the bug); compact, readable,
   not duplicating existing SV or unit tests (search for them); minimal reproducer with stock
-  config; SV tests self-contained and version-gated where 8 and 9 differ.
+  config; SV tests self-contained and version-gated where 8 and 9 differ. Regression tests allowed.
 - **Commits:** one logical change each, each builds, the fix and its tests together,
   `<module>: <summary>` title, a body explaining why, `Ticket:` (the backport ticket on 8.0.x),
   `(cherry picked from commit ...)` on backports, no AI attribution, no personal files.

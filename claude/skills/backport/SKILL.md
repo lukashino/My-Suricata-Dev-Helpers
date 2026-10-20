@@ -10,7 +10,7 @@ Input: $ARGUMENTS
 
 **NEVER change detection, runtime or configuration behavior on 8.0.x unless the user explicitly
 asked.** When a backport cannot be clean, give the user a full explanation and the options before
-finishing it.
+finishing it. Any change of behavior is a full stop!
 
 `$R` below is the OISF remote of this checkout (`git remote -v`, often `github`). Run
 `git fetch $R` first.

@@ -99,7 +99,8 @@ Build like CI: `cd doc/userguide && python3 -m sphinx -W -q -b html . <scratchpa
   Leave out implementation details, design rationale, history ("previously", "now") and progress notes unless they affect a user's decision.
 - Concise and non-repetitive, one source of truth; pull code/config in verbatim with
   `literalinclude` where it helps.
-- When relevant, e.g., behavior change, add a note to the upgrade guide
+- When relevant, e.g., behavior change, especially for going from version to version,
+  add a note to the upgrade guide
 
 ## Review
 
@@ -114,6 +115,12 @@ intended behavior; it holds the checklist. Never count your own pass as the revi
   on 8.0.x unless explicitly asked.**
 
 When the prompt says **ultrathink**, use the suricata-change-workflow skill.
+Always update schema and docs when adding new outputs.
+Failures and operation should be visible and well debugable from a run-time operator's perspective,
+e.g, through engine events or statistics, so corrective actions can be applied.
+Help messages can even suggest potential fixes.
+
+### Backports
 
 ## Tools and environment
 

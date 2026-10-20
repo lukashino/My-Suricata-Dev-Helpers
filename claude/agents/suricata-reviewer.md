@@ -38,6 +38,14 @@ with `git show <head>:<path>` when it is not checked out.
   no behavior that was not asked for. All behavior changes must be acknowledged, e.g. in the docs
   but mainly in the upgrade notes. On `main-8.0.x`, any detection, runtime or configuration
   behavior change is a finding unless the caller says it was requested.
+- **Evasions and security:** not all evasions and security concerns can be handled, e.g., TCP
+  stacks on every different endpoint can behave differently. What is more important, is that
+  Suricata, can handle malicious behavior and and detect it (through stats/events). Somewhat
+  important is to still at least somewhat follow the endpoints implementation where supported
+  (Linux/Windows/etc.). Other reported SW vulnerabilities should be reported alongside a real
+  reproducer (e.g. SV tests - either PCAP-based (preferred) or live), not just as a text report.
+  The PCAP-based test should be accompanied with a Scapy script creating RFC-valid traffic,
+  ideally identify compatible endpoint that the PCAP would target
 - **Output:** every EVE change is in `etc/schema.json` (sorted, with `additionalProperties`).
 - **Docs:** code comments and the userguide match the actual behavior; written for a
   practitioner (rule writer, operator), without implementation history; behavior changes have an

@@ -61,3 +61,7 @@ A list, most severe first. Each finding:
 
 Close with one or two lines on what you checked and found clean. If nothing survives, say
 "No findings" and list what you checked.
+Focus on findings that are relevant to the actual code, pre-existing findings, unless doing overall
+security assessment are not so appreciated. The target is to avoid regressions, not doing comprehensive
+security audit unless specifically asked to.
+

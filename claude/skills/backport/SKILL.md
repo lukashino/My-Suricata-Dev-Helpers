@@ -26,7 +26,9 @@ finishing it.
 3. **Branch** from `$R/main-8.0.x`: `backport-8.0.x/<type>/<backport tickets>-<slug>-v1`, e.g.
    `backport-8.0.x/bug/8968-8970-flow-scope-backports-v1`.
 4. **Cherry-pick** with `git cherry-pick -x <sha>...`. In each message, replace `Ticket:` with the
-   backport ticket, and keep `(cherry picked from commit ...)` as the last line.
+   updated backport ticket, and keep `(cherry picked from commit ...)` as the last line.
+   DO NOT change commit messages of the original `main` commits, unless a major change in behavior
+   necessitates it.
 5. **Conflicts and missing pieces:** adapt minimally. Inline `main`-only helpers instead of
    backporting unrelated commits, and keep 8.0.x APIs, config and output. If adapting would change
    behavior or pull in other commits, stop and present the options. Explain each adaptation in the

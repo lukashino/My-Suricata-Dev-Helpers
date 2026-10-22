@@ -60,6 +60,13 @@ BLOCK = [
     "echo it's; gh workflow run x",
     "echo it's; git -C x push",
     "echo it's; scdev pr create",
+    "git push>/dev/null",
+    "git push 2>&1 | tail -3",
+    ">log git push",
+    "scdev pr create 2>&1 | tee log",
+    "scdev pr create &>/dev/null",
+    "scdev pr create -- --help",
+    "diff <(scdev pr list) <(scdev pr create)",
 ]
 
 ALLOW = [
@@ -108,6 +115,16 @@ ALLOW = [
     "echo it's; gh pr view 1",
     "echo it's; git stash push",
     "echo it's; scdev issue 1 --json",
+    "scdev --help 2>&1 | head -30",
+    "scdev pr create --help",
+    "scdev redmine users > /tmp/users.txt",
+    "scdev redmine users ls >>users.txt 2>/dev/null",
+    "scdev issue 8991 --json 2>&1 | jq .",
+    "scdev issue 8991 > issue.txt",
+    "scdev issues &>/dev/null",
+    "scdev gh ghsa ls 2>&1|head",
+    "gh pr view 1 >out 2>&1",
+    "git log --oneline 2>/dev/null | head",
 ]
 
 

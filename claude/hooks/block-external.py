@@ -15,6 +15,10 @@ HEREDOC = re.compile(r"<<(-?)\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\2")
 # a heredoc body is data unless a shell (or ssh) on that line reads it as commands
 HEREDOC_READERS = re.compile(r"(^|[\s;&|(])(bash|sh|zsh|dash|ssh)(\s|$)")
 SEPARATORS = set(";&|()\n")
+PUNCTUATION = ";&|()<>\n"
+# shlex returns a run of punctuation as one token (">&" in 2>&1, ")>" in (a)>f): split it into
+# redirection operators and separator runs
+OPERATORS = re.compile(r"&>>?|[<>]&|>>|>\||<<<?|<>|[<>]|[;&|()\n]+")
 
 GIT_BLOCKED = {"push", "send-email"}
 GIT_OPTS_WITH_ARG = {"-C", "-c", "--git-dir", "--work-tree", "--namespace", "--config-env",
@@ -79,18 +83,31 @@ def strip_heredocs(command):
 
 
 def segments(command):
-    lex = shlex.shlex(command, posix=True, punctuation_chars=";&|()\n")
+    """The words of each simple command, without redirections and their targets."""
+    lex = shlex.shlex(command, posix=True, punctuation_chars=PUNCTUATION)
     lex.whitespace = " \t\r"
     lex.whitespace_split = True
     lex.commenters = ""
     seg = []
+    redirect_target = False
     for tok in lex:
-        if tok and set(tok) <= SEPARATORS:
-            if seg:
-                yield seg
-            seg = []
-        else:
-            seg.append(tok)
+        if not tok or not set(tok) <= set(PUNCTUATION):
+            if not redirect_target:
+                seg.append(tok)
+            redirect_target = False
+            continue
+        for op in OPERATORS.findall(tok):
+            redirect_target = False
+            if set(op) <= SEPARATORS:
+                if seg:
+                    yield seg
+                seg = []
+            else:
+                # shlex splits the fd off (2>&1 -> 2 >& 1); a lone number argument dropped
+                # with it is never a subcommand name
+                if seg and seg[-1].isdigit():
+                    seg.pop()
+                redirect_target = True
     if seg:
         yield seg
 
@@ -153,6 +170,9 @@ def gh_api_blocked(args):
 
 
 def scdev_blocked(args):
+    # clap prints help and exits before running any subcommand
+    if "--help" in (args[:args.index("--")] if "--" in args else args):
+        return False
     pos = positional(args)
     node = SCDEV_READ
     for p in pos:

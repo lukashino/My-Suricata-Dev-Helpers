@@ -67,6 +67,12 @@ checks:
   those); no pcapng (`tshark -F pcap -r in -w out`). `./pcap-check.sh` checks all, in ~4 min.
 - Stream/reassembly tests need a real 3-way handshake: a midstream session whose protocol
   detection fails stops reassembly.
+- A memory-lifetime bug (stale pointer, use-after-free) only shows once the object is freed and
+  only under ASAN or valgrind: put several flows on one thread (`args: --runmode single`), make
+  them time out (short `flow-timeouts` in a local `suricata.yaml`), reach the code from every rule
+  type that can (packet, IP-only, frame, firewall), and assert normal output plus `exit-code: 0`.
+  On a plain build it passes before and after the fix; CI's ASAN job is what it guards, so verify
+  it under valgrind or ASAN on the unfixed build before committing it.
 - Flaky live tests: remove the noise source or fix teardown order. Never loosen exact counts or
   add sleeps.
 

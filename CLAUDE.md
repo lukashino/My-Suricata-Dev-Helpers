@@ -80,6 +80,24 @@ Writing, changing or backporting an SV test: use the writing-sv-tests skill.
 - Before reporting a change as done, run the pre-push-checks skill: it mirrors the CI checks.
   CI jobs it can't mirror (ASAN, scan-build, BSD builds, SV live): the running-local-ci skill.
 
+## Correctness rules
+
+- State cached for a scope in a thread, flow or packet context (a pointer, id or flag set at the
+  top of a loop body or function) is cleared on every exit of that scope: one helper called at
+  each `return`/`goto`/`break`, or a single exit. A reset at the normal end of the scope alone is
+  a bug waiting for the next early exit. Grep the exits before claiming "valid while X is set".
+- Replacing a lookup by id with a cached pointer turns a stale id (wrong result) into a stale
+  pointer (use-after-free): prove the pointer outlives every reader, including readers outside
+  the scope that set it (packet, IP-only, frame and firewall rules, post-match, alert finalize).
+- Firewall mode adds early exits to detection that IDS/IPS never take (e.g. the `return`s and
+  `goto next_tx_fw` in `DetectRunTx`). A detection change is not done until those paths were read
+  and the firewall SV suite (`run.py -q ruletype-firewall`) was run.
+- A green targeted test proves only the paths it exercises. For lifetime, locking or mode-specific
+  changes, build an adversarial reproducer (several flows on one thread with `--runmode single`,
+  short flow timeouts so objects get freed, the changed keyword from every rule type that can
+  reach it) and run it under valgrind or ASAN, on head and on the base. A bug the base already has
+  gets its own commit and ticket (and a note on 8.0.x relevance); it is not hidden in the fix.
+
 ## Code style
 
 - Concise code; comments only where they add what the code does not say.
@@ -104,8 +122,9 @@ Build like CI: `cd doc/userguide && python3 -m sphinx -W -q -b html . <scratchpa
 
 ## Review
 
-The final review is always a NEW `suricata-reviewer` agent, given the base ref, the ticket and the
-intended behavior; it holds the checklist. Never count your own pass as the review.
+The final review is always a NEW `suricata-reviewer` agent, given the base ref, the ticket, the
+intended behavior and the invariants the change relies on (new cached state and the scope that
+owns it, locking assumptions); it holds the checklist. Never count your own pass as the review.
 
 ## Development process
 

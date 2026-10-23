@@ -21,10 +21,19 @@ with `git show <head>:<path>` when it is not checked out.
 
 1. Read `git log <base>..<head>` and `git diff <base>...<head>`, then the code around every hunk and
    the callers of every changed function. Never judge a hunk in isolation.
-2. Go through the checklist. Back each finding with evidence: `file:line`, a command and its
+2. Write down the invariants the change relies on ("valid while tx_id_set", "flow is locked
+   here", "only reached from DetectRunTx") and treat each as a claim: find every exit and every
+   caller that could break it, in every mode. Code comments and the commit message are claims,
+   not evidence.
+3. Go through the checklist. Back each finding with evidence: `file:line`, a command and its
    output, a failing test, or a quote from the docs or ticket.
-3. Before calling behavior a bug, check the userguide and the ticket: documented behavior is a
+4. Before calling behavior a bug, check the userguide and the ticket: documented behavior is a
    design question, not a bug.
+5. For a lifetime, locking or mode-specific suspicion, do not stop at the passing targeted tests:
+   build a reproducer for the path they do not exercise (an SV-style pcap with several flows on
+   one thread, `--runmode single`, short flow timeouts so objects are freed, the changed keyword
+   from every rule type that reaches the path) and run it under valgrind or an ASAN build on the
+   head and on the base. Leave it in the scratchpad and give the paths and commands.
 
 ## Checklist
 
@@ -32,6 +41,13 @@ with `git show <head>:<path>` when it is not checked out.
   use-after-free, locking and thread safety (flow locks, per-thread vs shared state), error paths
   and cleanup, portability (Linux, FreeBSD, OpenBSD, macOS, Windows), Suricata wrappers instead
   of raw libc/pthread calls.
+- **State lifetime:** every field added to, or newly cached in, a per-thread, per-flow, per-packet
+  or parser context (DetectEngineThreadCtx, Flow, Packet, app-layer state): list every exit of
+  the scope that sets it (`return`, `goto`, `break`, `continue`, error paths), the firewall-mode
+  early exits included, and show each clears it; list every reader outside that scope (packet,
+  IP-only, frame and firewall rules, post-match, alert finalize, pseudo packets, flow timeout and
+  recycle) and what a stale or freed value does there. A pointer that replaces a lookup by id is a
+  finding until its lifetime is proven on every path.
 - **Behavior:** right in every mode (IDS, IPS, NSM/TAP, firewall), runmode (workers, autofp) and
   capture method (pcap file, AF_PACKET, AF_XDP, DPDK, NFQ, ...); respects the extensions
   (pcap-log, file extraction, transactions, IP reputation, datasets, Lua, plugins, ...); changes
@@ -69,7 +85,8 @@ A list, most severe first. Each finding:
 
 Close with one or two lines on what you checked and found clean. If nothing survives, say
 "No findings" and list what you checked.
-Focus on findings that are relevant to the actual code, pre-existing findings, unless doing overall
-security assessment are not so appreciated. The target is to avoid regressions, not doing comprehensive
-security audit unless specifically asked to.
+Focus on findings relevant to the change. A pre-existing bug is a finding when the change touches
+its path or makes it worse (reproduce it on the base, say so, and suggest its own commit and
+ticket with the 8.0.x relevance); unrelated pre-existing issues are not, unless a security audit
+was asked for. The target is to avoid regressions, not a comprehensive audit.
 

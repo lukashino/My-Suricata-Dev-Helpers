@@ -26,6 +26,9 @@ From the Suricata root:
 | `openbsd` | OpenBSD build and unit tests, no SV (CI on main runs SV too) | main, 8.0.x |
 | `sv-live` | SV `live/` tests with DPDK and XDP, in a VM | main, 8.0.x |
 
+- `rust-asan` only finds what some SV test exercises: a lifetime bug on a path without a test
+  (firewall early exits, flow recycle) needs its reproducer committed as an SV test first, or a
+  manual valgrind run of that reproducer (CLAUDE.md, "Correctness rules").
 - It tests the committed HEAD (`git archive`) and refuses uncommitted changes to tracked files;
   `--sv-dir` must be committed too. Without it, SV is upstream `master`, cached in
   `localci/_cache/`.

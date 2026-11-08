@@ -65,7 +65,8 @@ with `git show <head>:<path>` when it is not checked out.
 - **Output:** every EVE change is in `etc/schema.json` (sorted, with `additionalProperties`).
 - **Docs:** code comments and the userguide match the actual behavior; written for a
   practitioner (rule writer, operator), without implementation history; behavior changes have an
-  upgrade-guide note.
+  upgrade-guide note. New images: PNG with `:alt:`, text source (`.dot`/`.msc`) committed beside
+  it, no build-time rendering.
 - **Tests:** they assert the correct behavior (they would fail on the bug); compact, readable,
   not duplicating existing SV or unit tests (search for them); minimal reproducer with stock
   config; SV tests self-contained and version-gated where 8 and 9 differ. Regression tests allowed.

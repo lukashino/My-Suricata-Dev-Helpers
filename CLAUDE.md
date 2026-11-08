@@ -119,6 +119,9 @@ Build like CI: `cd doc/userguide && python3 -m sphinx -W -q -b html . <scratchpa
   `literalinclude` where it helps.
 - When relevant, e.g., behavior change, especially for going from version to version,
   add a note to the upgrade guide
+- Images: PNG next to the page, via `.. image::` with `:width:`/`:scale:` and a descriptive
+  `:alt:`; commit the text source (`.dot`/`.msc`) beside the PNG and render locally, no
+  build-time rendering or Sphinx extensions (must also work in the PDF build).
 
 ## Review
 
